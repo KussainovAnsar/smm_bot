@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from dotenv import load_dotenv
+from google.genai import errors as genai_errors
 from openai import APIConnectionError, APIError, RateLimitError
 
 from .config import settings
@@ -43,6 +44,28 @@ async def send_ai_error(message: Message, error: Exception) -> None:
     logger.exception("AI request failed")
     if isinstance(error, ValueError):
         await message.answer(str(error))
+        return
+
+    if isinstance(error, genai_errors.ServerError):
+        await message.answer(
+            "Gemini сейчас перегружен и не смог ответить даже через fallback-модели. "
+            "Повтори запрос через пару минут."
+        )
+        return
+
+    if isinstance(error, genai_errors.ClientError) and (
+        "429" in str(error) or "RESOURCE_EXHAUSTED" in str(error)
+    ):
+        await message.answer(
+            "Gemini уперся в бесплатные лимиты по доступным моделям. "
+            "Подожди минуту и повтори запрос или подключи другой бесплатный ключ."
+        )
+        return
+
+    if isinstance(error, genai_errors.APIError):
+        await message.answer(
+            "Gemini вернул ошибку при генерации. Проверь API-ключ, лимиты или попробуй еще раз."
+        )
         return
 
     if isinstance(error, RateLimitError):

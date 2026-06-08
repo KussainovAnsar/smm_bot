@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     ai_provider: str = "gemini"
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
+    gemini_fallback_models: str = "gemini-2.5-flash-lite,gemini-2.0-flash-lite"
     groq_api_key: str | None = None
     groq_text_model: str = "llama-3.3-70b-versatile"
     groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"

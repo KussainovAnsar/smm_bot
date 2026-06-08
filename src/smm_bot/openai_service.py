@@ -2,6 +2,7 @@ import base64
 from pathlib import Path
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 from openai import OpenAI
 
@@ -50,12 +51,11 @@ class OpenAIService:
     async def transcribe(self, audio_path: Path) -> str:
         if self.provider == "gemini":
             uploaded_file = self.client.files.upload(file=str(audio_path))
-            response = self.client.models.generate_content(
-                model=self.settings.gemini_model,
-                contents=[
+            response = self._gemini_generate(
+                [
                     "Сделай точную расшифровку речи. Верни только очищенный текст без комментариев.",
                     uploaded_file,
-                ],
+                ]
             )
             return response.text.strip()
 
@@ -104,13 +104,11 @@ class OpenAIService:
     async def analyze_photo(self, image_path: Path) -> str:
         image_b64 = base64.b64encode(image_path.read_bytes()).decode("utf-8")
         if self.provider == "gemini":
-            response = self.client.models.generate_content(
-                model=self.settings.gemini_model,
-                contents=[
+            response = self._gemini_generate(
+                [
                     types.Part.from_text(text=PHOTO_ANALYSIS_PROMPT),
                     types.Part.from_bytes(data=image_path.read_bytes(), mime_type="image/jpeg"),
                 ],
-                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
             )
             return response.text.strip()
 
@@ -168,14 +166,7 @@ class OpenAIService:
 
     def _text_response(self, prompt: str) -> str:
         if self.provider == "gemini":
-            response = self.client.models.generate_content(
-                model=self.settings.gemini_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    temperature=0.8,
-                ),
-            )
+            response = self._gemini_generate(prompt)
             return response.text.strip()
 
         if self.provider == "groq":
@@ -201,3 +192,41 @@ class OpenAIService:
         if self.provider == "groq":
             return self.settings.groq_transcribe_model
         return self.settings.openai_transcribe_model
+
+    @property
+    def _gemini_models(self) -> list[str]:
+        fallback_models = [
+            model.strip()
+            for model in self.settings.gemini_fallback_models.split(",")
+            if model.strip()
+        ]
+        return [self.settings.gemini_model, *fallback_models]
+
+    def _gemini_generate(self, contents):
+        last_error: Exception | None = None
+        for model in self._gemini_models:
+            try:
+                return self.client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                        temperature=0.8,
+                    ),
+                )
+            except genai_errors.ServerError as error:
+                last_error = error
+                continue
+            except genai_errors.ClientError as error:
+                last_error = error
+                if self._is_retryable_gemini_error(error):
+                    continue
+                raise
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("No Gemini models configured.")
+
+    @staticmethod
+    def _is_retryable_gemini_error(error: genai_errors.ClientError) -> bool:
+        message = str(error)
+        return "429" in message or "RESOURCE_EXHAUSTED" in message
