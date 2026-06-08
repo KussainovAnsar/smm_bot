@@ -1,6 +1,8 @@
 import base64
 from pathlib import Path
 
+from google import genai
+from google.genai import types
 from openai import OpenAI
 
 from .config import Settings
@@ -18,12 +20,19 @@ class OpenAIService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.provider = settings.ai_provider.lower().strip()
-        if self.provider == "groq":
+        if self.provider == "gemini":
+            self.client = self._build_gemini_client()
+        elif self.provider == "groq":
             self.client = self._build_groq_client()
         elif self.provider == "openai":
             self.client = self._build_openai_client()
         else:
-            raise ValueError("AI_PROVIDER must be 'groq' or 'openai'.")
+            raise ValueError("AI_PROVIDER must be 'gemini', 'groq' or 'openai'.")
+
+    def _build_gemini_client(self) -> genai.Client:
+        if not self.settings.gemini_api_key or self.settings.gemini_api_key == "replace_me":
+            raise ValueError("Set GEMINI_API_KEY in .env to use AI_PROVIDER=gemini.")
+        return genai.Client(api_key=self.settings.gemini_api_key)
 
     def _build_groq_client(self) -> OpenAI:
         if not self.settings.groq_api_key or self.settings.groq_api_key == "replace_me":
@@ -39,6 +48,17 @@ class OpenAIService:
         return OpenAI(api_key=self.settings.openai_api_key)
 
     async def transcribe(self, audio_path: Path) -> str:
+        if self.provider == "gemini":
+            uploaded_file = self.client.files.upload(file=str(audio_path))
+            response = self.client.models.generate_content(
+                model=self.settings.gemini_model,
+                contents=[
+                    "Сделай точную расшифровку речи. Верни только очищенный текст без комментариев.",
+                    uploaded_file,
+                ],
+            )
+            return response.text.strip()
+
         with audio_path.open("rb") as audio_file:
             result = self.client.audio.transcriptions.create(
                 model=self._transcribe_model,
@@ -83,6 +103,17 @@ class OpenAIService:
 
     async def analyze_photo(self, image_path: Path) -> str:
         image_b64 = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+        if self.provider == "gemini":
+            response = self.client.models.generate_content(
+                model=self.settings.gemini_model,
+                contents=[
+                    types.Part.from_text(text=PHOTO_ANALYSIS_PROMPT),
+                    types.Part.from_bytes(data=image_path.read_bytes(), mime_type="image/jpeg"),
+                ],
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            )
+            return response.text.strip()
+
         if self.provider == "groq":
             response = self.client.chat.completions.create(
                 model=self.settings.groq_vision_model,
@@ -136,6 +167,17 @@ class OpenAIService:
         return base64.b64decode(image_b64)
 
     def _text_response(self, prompt: str) -> str:
+        if self.provider == "gemini":
+            response = self.client.models.generate_content(
+                model=self.settings.gemini_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.8,
+                ),
+            )
+            return response.text.strip()
+
         if self.provider == "groq":
             response = self.client.chat.completions.create(
                 model=self.settings.groq_text_model,

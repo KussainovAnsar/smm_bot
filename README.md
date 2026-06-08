@@ -64,16 +64,31 @@ python -m src.smm_bot.bot
 
 Бот вернет варианты постов и визуальную рекомендацию.
 
-## Бесплатный AI-провайдер для MVP
+## Бесплатные AI-провайдеры для MVP
 
-По умолчанию проект настроен на Groq:
+По умолчанию проект настроен на Gemini:
 
-- `AI_PROVIDER=groq`
+- `AI_PROVIDER=gemini`
+- `GEMINI_MODEL=gemini-2.5-flash`
+
+Gemini подходит для MVP, потому что у него есть бесплатный tier в Google AI Studio и сильный multimodal API: текст, фото и аудио можно обрабатывать одной моделью.
+
+Чтобы включить Gemini:
+
+1. Создайте API key в [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. Вставьте его в `.env`:
+
+```env
+AI_PROVIDER=gemini
+GEMINI_API_KEY=ваш_ключ
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+Groq тоже поддерживается:
+
 - `GROQ_TEXT_MODEL=llama-3.3-70b-versatile`
 - `GROQ_TRANSCRIBE_MODEL=whisper-large-v3`
 - `GROQ_VISION_MODEL=meta-llama/llama-4-scout-17b-16e-instruct`
-
-Groq подходит для MVP, потому что у него есть бесплатный план, быстрые LLM, speech-to-text и vision-модель для анализа фото.
 
 Чтобы включить Groq:
 
