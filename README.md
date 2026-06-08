@@ -64,13 +64,39 @@ python -m src.smm_bot.bot
 
 Бот вернет варианты постов и визуальную рекомендацию.
 
-## Настройки OpenAI
+## Бесплатный AI-провайдер для MVP
 
-По умолчанию используются:
+По умолчанию проект настроен на Groq:
 
-- `OPENAI_TEXT_MODEL=gpt-5.2`
-- `OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe`
-- `OPENAI_IMAGE_MODEL=gpt-image-1.5`
+- `AI_PROVIDER=groq`
+- `GROQ_TEXT_MODEL=llama-3.3-70b-versatile`
+- `GROQ_TRANSCRIBE_MODEL=whisper-large-v3`
+- `GROQ_VISION_MODEL=meta-llama/llama-4-scout-17b-16e-instruct`
+
+Groq подходит для MVP, потому что у него есть бесплатный план, быстрые LLM, speech-to-text и vision-модель для анализа фото.
+
+Чтобы включить Groq:
+
+1. Зарегистрируйтесь в [Groq Console](https://console.groq.com/).
+2. Создайте API key.
+3. Вставьте его в `.env`:
+
+```env
+AI_PROVIDER=groq
+GROQ_API_KEY=ваш_ключ
+```
+
+## Настройки OpenAI как fallback
+
+OpenAI можно оставить как запасной вариант:
+
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=ваш_ключ
+OPENAI_TEXT_MODEL=gpt-5.2
+OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
+OPENAI_IMAGE_MODEL=gpt-image-1.5
+```
 
 Чтобы включить генерацию и отправку AI-картинки, установите:
 

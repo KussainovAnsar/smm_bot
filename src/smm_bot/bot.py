@@ -16,7 +16,7 @@ from .storage import Storage, UserProfile
 load_dotenv()
 
 storage = Storage(settings.database_path)
-openai_service = OpenAIService(settings)
+ai_service: OpenAIService | None = None
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +41,10 @@ async def send_long(message: Message, text: str) -> None:
 
 async def send_ai_error(message: Message, error: Exception) -> None:
     logger.exception("AI request failed")
+    if isinstance(error, ValueError):
+        await message.answer(str(error))
+        return
+
     if isinstance(error, RateLimitError):
         await message.answer(
             "OpenAI сейчас не дает сгенерировать ответ: на API-ключе закончилась квота "
@@ -61,6 +65,13 @@ async def send_ai_error(message: Message, error: Exception) -> None:
         return
 
     await message.answer("Что-то пошло не так при генерации. Я записал ошибку в лог.")
+
+
+def get_ai_service() -> OpenAIService:
+    global ai_service
+    if ai_service is None:
+        ai_service = OpenAIService(settings)
+    return ai_service
 
 
 async def download_telegram_file(bot: Bot, file_id: str, suffix: str) -> Path:
@@ -114,7 +125,7 @@ async def plan(message: Message, command: CommandObject) -> None:
     session = storage.get_session(message.from_user.id)
     await message.answer("Собираю контент-план...")
     try:
-        result = await openai_service.generate_plan(
+        result = await get_ai_service().generate_plan(
             profile_data,
             readable_period,
             context=session.get("last_source_text") or session.get("last_result"),
@@ -130,7 +141,7 @@ async def handle_voice(message: Message, bot: Bot) -> None:
     await message.answer("Расшифровываю voice и собираю варианты поста...")
     audio_path = await download_telegram_file(bot, message.voice.file_id, ".ogg")
     try:
-        transcript = await openai_service.transcribe(audio_path)
+        transcript = await get_ai_service().transcribe(audio_path)
         await message.answer(f"Расшифровка:\n{transcript}")
         await generate_from_source(message, transcript)
     except Exception as error:
@@ -144,7 +155,7 @@ async def handle_photo(message: Message, bot: Bot) -> None:
     largest_photo = message.photo[-1]
     image_path = await download_telegram_file(bot, largest_photo.file_id, ".jpg")
     try:
-        analysis = await openai_service.analyze_photo(image_path)
+        analysis = await get_ai_service().analyze_photo(image_path)
         session = storage.get_session(message.from_user.id)
         merged_context = "\n\n".join(
             item for item in [session.get("photo_context"), analysis] if item
@@ -168,7 +179,7 @@ async def handle_text(message: Message) -> None:
         await message.answer("Дорабатываю предыдущий результат...")
         profile_data = storage.get_profile(message.from_user.id)
         try:
-            revised = await openai_service.revise_content(profile_data, last_result, text)
+            revised = await get_ai_service().revise_content(profile_data, last_result, text)
         except Exception as error:
             await send_ai_error(message, error)
             return
@@ -185,7 +196,7 @@ async def generate_from_source(message: Message, source_text: str) -> None:
     profile_data = storage.get_profile(message.from_user.id)
     session = storage.get_session(message.from_user.id)
     try:
-        result = await openai_service.generate_content(
+        result = await get_ai_service().generate_content(
             profile_data,
             source_text,
             photo_context=session.get("photo_context"),
