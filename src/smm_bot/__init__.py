@@ -1,0 +1,1 @@
+"""SMM Bot package."""
