@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -6,6 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from dotenv import load_dotenv
+from openai import APIConnectionError, APIError, RateLimitError
 
 from .config import settings
 from .openai_service import OpenAIService
@@ -15,6 +17,7 @@ load_dotenv()
 
 storage = Storage(settings.database_path)
 openai_service = OpenAIService(settings)
+logger = logging.getLogger(__name__)
 
 
 def chunk_text(text: str, limit: int = 3900) -> list[str]:
@@ -34,6 +37,30 @@ def chunk_text(text: str, limit: int = 3900) -> list[str]:
 async def send_long(message: Message, text: str) -> None:
     for part in chunk_text(text):
         await message.answer(part)
+
+
+async def send_ai_error(message: Message, error: Exception) -> None:
+    logger.exception("AI request failed")
+    if isinstance(error, RateLimitError):
+        await message.answer(
+            "OpenAI сейчас не дает сгенерировать ответ: на API-ключе закончилась квота "
+            "или не подключен billing. Проверь баланс/оплату в OpenAI Platform и повтори запрос."
+        )
+        return
+
+    if isinstance(error, APIConnectionError):
+        await message.answer(
+            "Не получилось подключиться к OpenAI. Проверь интернет и попробуй еще раз."
+        )
+        return
+
+    if isinstance(error, APIError):
+        await message.answer(
+            "OpenAI вернул ошибку при генерации. Попробуй еще раз или проверь настройки API."
+        )
+        return
+
+    await message.answer("Что-то пошло не так при генерации. Я записал ошибку в лог.")
 
 
 async def download_telegram_file(bot: Bot, file_id: str, suffix: str) -> Path:
@@ -86,11 +113,15 @@ async def plan(message: Message, command: CommandObject) -> None:
     profile_data = storage.get_profile(message.from_user.id)
     session = storage.get_session(message.from_user.id)
     await message.answer("Собираю контент-план...")
-    result = await openai_service.generate_plan(
-        profile_data,
-        readable_period,
-        context=session.get("last_source_text") or session.get("last_result"),
-    )
+    try:
+        result = await openai_service.generate_plan(
+            profile_data,
+            readable_period,
+            context=session.get("last_source_text") or session.get("last_result"),
+        )
+    except Exception as error:
+        await send_ai_error(message, error)
+        return
     storage.append_history(message.from_user.id, "plan", result)
     await send_long(message, result)
 
@@ -102,6 +133,8 @@ async def handle_voice(message: Message, bot: Bot) -> None:
         transcript = await openai_service.transcribe(audio_path)
         await message.answer(f"Расшифровка:\n{transcript}")
         await generate_from_source(message, transcript)
+    except Exception as error:
+        await send_ai_error(message, error)
     finally:
         audio_path.unlink(missing_ok=True)
 
@@ -119,6 +152,8 @@ async def handle_photo(message: Message, bot: Bot) -> None:
         storage.save_session(message.from_user.id, photo_context=merged_context)
         storage.append_history(message.from_user.id, "photo_analysis", analysis)
         await send_long(message, f"Фото добавлено в контекст:\n{analysis}\n\nТеперь отправь текст/voice с идеей поста.")
+    except Exception as error:
+        await send_ai_error(message, error)
     finally:
         image_path.unlink(missing_ok=True)
 
@@ -132,7 +167,11 @@ async def handle_text(message: Message) -> None:
     if last_result and text.lower().startswith(revision_words):
         await message.answer("Дорабатываю предыдущий результат...")
         profile_data = storage.get_profile(message.from_user.id)
-        revised = await openai_service.revise_content(profile_data, last_result, text)
+        try:
+            revised = await openai_service.revise_content(profile_data, last_result, text)
+        except Exception as error:
+            await send_ai_error(message, error)
+            return
         storage.save_session(message.from_user.id, last_result=revised)
         storage.append_history(message.from_user.id, "revision", revised)
         await send_long(message, revised)
@@ -145,11 +184,15 @@ async def handle_text(message: Message) -> None:
 async def generate_from_source(message: Message, source_text: str) -> None:
     profile_data = storage.get_profile(message.from_user.id)
     session = storage.get_session(message.from_user.id)
-    result = await openai_service.generate_content(
-        profile_data,
-        source_text,
-        photo_context=session.get("photo_context"),
-    )
+    try:
+        result = await openai_service.generate_content(
+            profile_data,
+            source_text,
+            photo_context=session.get("photo_context"),
+        )
+    except Exception as error:
+        await send_ai_error(message, error)
+        return
     storage.save_session(
         message.from_user.id,
         last_source_text=source_text,
@@ -172,6 +215,7 @@ def build_dispatcher() -> Dispatcher:
 
 
 async def main() -> None:
+    logging.basicConfig(level=logging.INFO)
     settings.ensure_dirs()
     bot = Bot(token=settings.telegram_bot_token)
     dp = build_dispatcher()
