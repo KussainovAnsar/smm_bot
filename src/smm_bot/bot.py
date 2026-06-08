@@ -165,7 +165,6 @@ async def handle_voice(message: Message, bot: Bot) -> None:
     audio_path = await download_telegram_file(bot, message.voice.file_id, ".ogg")
     try:
         transcript = await get_ai_service().transcribe(audio_path)
-        await message.answer(f"Расшифровка:\n{transcript}")
         await generate_from_source(message, transcript)
     except Exception as error:
         await send_ai_error(message, error)

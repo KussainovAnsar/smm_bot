@@ -1,4 +1,5 @@
 import base64
+import re
 from pathlib import Path
 
 from google import genai
@@ -79,7 +80,7 @@ class OpenAIService:
             source_text=source_text,
             photo_context=photo_context or "Фото не приложены. Предложи AI-визуал.",
         )
-        return self._text_response(prompt)
+        return clean_ai_output(self._text_response(prompt))
 
     async def revise_content(self, profile: UserProfile, last_result: str, instruction: str) -> str:
         prompt = REVISION_TEMPLATE.format(
@@ -89,7 +90,7 @@ class OpenAIService:
             last_result=last_result,
             instruction=instruction,
         )
-        return self._text_response(prompt)
+        return clean_ai_output(self._text_response(prompt))
 
     async def generate_plan(self, profile: UserProfile, period: str, context: str | None = None) -> str:
         prompt = PLAN_TEMPLATE.format(
@@ -99,7 +100,7 @@ class OpenAIService:
             period=period,
             context=context or "Истории пока мало. Предложи универсальный план для ниши.",
         )
-        return self._text_response(prompt)
+        return clean_ai_output(self._text_response(prompt))
 
     async def analyze_photo(self, image_path: Path) -> str:
         image_b64 = base64.b64encode(image_path.read_bytes()).decode("utf-8")
@@ -230,3 +231,22 @@ class OpenAIService:
     def _is_retryable_gemini_error(error: genai_errors.ClientError) -> bool:
         message = str(error)
         return "429" in message or "RESOURCE_EXHAUSTED" in message
+
+
+def clean_ai_output(text: str) -> str:
+    text = text.strip()
+    text = re.sub(r"```[\s\S]*?```", lambda match: match.group(0).strip("`"), text)
+    text = re.sub(r"[*_`]+", "", text)
+    text = re.sub(r"^\s*[-•]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(
+        "["
+        "\U0001F300-\U0001FAFF"
+        "\U00002700-\U000027BF"
+        "\U00002600-\U000026FF"
+        "]+",
+        "",
+        text,
+    )
+    text = "\n".join(line.strip() for line in text.splitlines())
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
