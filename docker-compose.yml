@@ -1,0 +1,21 @@
+services:
+  smm-bot:
+    build: .
+    image: smm-bot:latest
+    container_name: smm-bot
+    restart: unless-stopped
+    # Loads TELEGRAM_BOT_TOKEN, API keys and provider settings.
+    env_file:
+      - .env
+    # Persist SQLite DB and temp files across restarts/rebuilds.
+    volumes:
+      - bot-data:/app/work
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # No `ports:` — the bot polls Telegram over outbound HTTPS only.
+
+volumes:
+  bot-data:

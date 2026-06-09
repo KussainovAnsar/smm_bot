@@ -38,6 +38,16 @@ pip install -r requirements.txt
 python -m src.smm_bot.bot
 ```
 
+## Деплой на VPS
+
+Бот работает в режиме long-polling (только исходящие соединения, без портов и
+домена). Готовые Docker-артефакты и пошаговая инструкция — в [DEPLOY.md](DEPLOY.md):
+
+```bash
+cp .env.example .env   # заполнить токены
+docker compose up -d --build
+```
+
 ## Команды
 
 - `/start` - старт и краткая инструкция.
