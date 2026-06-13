@@ -7,3 +7,4 @@ work/*.log
 work/*.sqlite3
 work/*.sqlite3-*
 outputs/
+deploy/
